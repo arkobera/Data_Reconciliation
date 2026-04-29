@@ -1,3 +1,4 @@
+
 # Data Reconciliation
 
 Month-end reconciliation demo for a payments company whose platform transactions and bank settlements do not line up cleanly.
@@ -54,3 +55,5 @@ The reconciliation response includes:
 - record-level reconciliation results
 - anomaly buckets with explanations
 - sample rows from both datasets
+
+<img width="1800" height="1083" alt="Screenshot from 2026-04-29 20-20-43" src="https://github.com/user-attachments/assets/b46ec294-f1ba-49ab-acb6-c35cb7ff3181" />
