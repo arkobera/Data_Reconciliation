@@ -1,57 +1,91 @@
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+from __future__ import annotations
+
+from pathlib import Path
 import random
 
-np.random.seed(42)
+import pandas as pd
 
-N = 1000
+DATA_DIR = Path(__file__).resolve().parent
 
-base_date = datetime(2026, 3, 25)
 
-transactions = []
-for i in range(N):
-    txn_date = base_date + timedelta(days=random.randint(0, 5))
-    amount = round(np.random.uniform(100, 1000), 2)
+def generate_assessment_data(data_dir: Path | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    output_dir = data_dir or DATA_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    transactions.append({
-        "txn_id": f"T{i}",
-        "amount": amount,
-        "txn_date": txn_date
-    })
+    rng = random.Random(42)
+    base_date = pd.Timestamp("2026-03-21")
 
-df_txn = pd.DataFrame(transactions)
+    transactions: list[dict[str, object]] = []
+    for index in range(1, 31):
+        txn_date = base_date + pd.Timedelta(days=rng.randint(0, 7))
+        amount = round(rng.uniform(95, 950), 2)
+        transactions.append(
+            {
+                "txn_id": f"TXN-{index:03d}",
+                "customer_id": f"CUST-{rng.randint(1000, 9999)}",
+                "amount": amount,
+                "currency": "INR",
+                "txn_date": txn_date,
+            }
+        )
 
-# --- Create settlements ---
-settlements = []
+    df_txn = pd.DataFrame(transactions)
 
-for _, row in df_txn.iterrows():
-    delay = random.choice([0, 1, 2])
-    settle_date = row["txn_date"] + timedelta(days=delay)
+    settlements: list[dict[str, object]] = []
+    for _, row in df_txn.iterrows():
+        settle_date = row["txn_date"] + pd.Timedelta(days=rng.choice([0, 1, 2]))
+        settlements.append(
+            {
+                "settle_id": f"SET-{row['txn_id']}",
+                "linked_txn_id": row["txn_id"],
+                "amount": row["amount"],
+                "settle_date": settle_date,
+                "entry_type": "settlement",
+                "batch_id": f"BATCH-{settle_date.strftime('%Y%m%d')}",
+            }
+        )
 
-    settlements.append({
-        "settle_id": f"S{row.txn_id}",
-        "amount": row["amount"],
-        "settle_date": settle_date
-    })
+    df_settle = pd.DataFrame(settlements)
 
-df_settle = pd.DataFrame(settlements)
+    cross_month_txn = "TXN-001"
+    cross_month_amount = 412.37
+    df_txn.loc[df_txn["txn_id"] == cross_month_txn, ["amount", "txn_date"]] = [cross_month_amount, pd.Timestamp("2026-03-31")]
+    df_settle.loc[df_settle["linked_txn_id"] == cross_month_txn, ["amount", "settle_date", "batch_id"]] = [
+        cross_month_amount,
+        pd.Timestamp("2026-04-01"),
+        "BATCH-20260401",
+    ]
 
-# 🔥 Inject discrepancies
+    rounding_txn = "TXN-002"
+    rounding_amount = 255.43
+    df_txn.loc[df_txn["txn_id"] == rounding_txn, "amount"] = rounding_amount
+    df_settle.loc[df_settle["linked_txn_id"] == rounding_txn, "amount"] = 255.42
 
-# 1. Cross-month settlement
-df_settle.loc[0, "settle_date"] = datetime(2026, 4, 1)
+    duplicate_txn = "TXN-003"
+    df_txn.loc[df_txn["txn_id"] == duplicate_txn, "amount"] = 109.22
+    df_settle.loc[df_settle["linked_txn_id"] == duplicate_txn, "amount"] = 109.22
+    duplicate_row = df_settle[df_settle["linked_txn_id"] == duplicate_txn].copy()
+    df_settle = pd.concat([df_settle, duplicate_row], ignore_index=True)
 
-# 2. Rounding issue
-df_settle.loc[1, "amount"] += 0.01 #type: ignore
+    refund_row = {
+        "settle_id": "SET-REFUND-ORPHAN",
+        "linked_txn_id": "TXN-404",
+        "amount": -189.55,
+        "settle_date": pd.Timestamp("2026-03-30"),
+        "entry_type": "refund",
+        "batch_id": "BATCH-20260330",
+    }
+    df_settle.loc[len(df_settle)] = refund_row
 
-# 3. Duplicate
-df_settle = pd.concat([df_settle, df_settle.iloc[[2]]])
+    df_txn = df_txn.sort_values("txn_date").reset_index(drop=True)
+    df_settle = df_settle.sort_values("settle_date").reset_index(drop=True)
 
-# 4. Refund without original
-df_settle.loc[len(df_settle)] = ["S_refund", -500, datetime(2026, 3, 28)]
+    df_txn.to_csv(output_dir / "transactions.csv", index=False)
+    df_settle.to_csv(output_dir / "settlements.csv", index=False)
 
-df_txn.to_csv("transactions.csv", index=False)
-df_settle.to_csv("settlements.csv", index=False)
+    return df_txn, df_settle
 
-print("Data generated.")
+
+if __name__ == "__main__":
+    generate_assessment_data()
+    print("Assessment data generated.")

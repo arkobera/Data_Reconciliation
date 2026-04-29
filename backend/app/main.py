@@ -1,21 +1,19 @@
 from fastapi import FastAPI
-import pandas as pd
-from app.services.matcher import reconcile
-from app.services.profiler import profile
-from app.services.anomalies import detect_anomalies
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+from app.routes.reconcile import router as reconcile_router
 
-@app.get("/reconcile")
-def run_reconciliation():
-    df_txn = pd.read_csv("backend/data/transactions.csv")
-    df_settle = pd.read_csv("backend/data/settlements.csv")
+app = FastAPI(
+    title="Month-End Reconciliation API",
+    description="Explains why payment platform transactions and bank settlements drift apart.",
+)
 
-    summary = {
-        "txn_profile": profile(df_txn),
-        "settle_profile": profile(df_settle),
-        "reconciliation": reconcile(df_txn, df_settle),
-        "anomalies": detect_anomalies(df_txn, df_settle)
-    }
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    return summary
+app.include_router(reconcile_router)
